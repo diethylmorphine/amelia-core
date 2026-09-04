@@ -1,0 +1,13 @@
+# /etc/logrotate.d/amelia
+# Journald сам ротирует логи сервиса; здесь — только vault и всё, что
+# Амелия пишет мимо. Её собственные jsonl подрезает модуль upkeep.
+/opt/amelia/data/*.jsonl {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su amelia amelia
+}

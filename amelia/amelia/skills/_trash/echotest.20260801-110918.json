@@ -1,0 +1,15 @@
+{
+  "name": "echotest",
+  "description": "Повторяет сказанное",
+  "intents": [
+    "echotest"
+  ],
+  "triggers": [
+    "эхо"
+  ],
+  "status": "disabled",
+  "created_at": "2026-08-01T11:09:17+00:00",
+  "request": "повторять за мной",
+  "attempts": 1,
+  "approved_at": "2026-08-01T11:09:17+00:00"
+}

@@ -1,0 +1,52 @@
+[Unit]
+Description=АМЕЛИЯ — локальный ИИ-ассистент
+Documentation=file:/opt/amelia/README.md
+After=network-online.target ollama.service
+Wants=network-online.target
+# Ollama желательна, но не обязательна: без неё Амелия работает на правилах
+Wants=ollama.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=amelia
+Group=amelia
+WorkingDirectory=/opt/amelia
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/amelia/.env
+ExecStart=/opt/amelia/.venv/bin/python -m amelia service
+
+# --- живучесть ---
+Restart=always
+RestartSec=10
+# Зависла и перестала пинговать — systemd убьёт и поднимет заново
+WatchdogSec=120
+# Не сдаваться после серии падений
+StartLimitIntervalSec=0
+# Дать время дописать SQLite при остановке
+TimeoutStopSec=30
+KillSignal=SIGTERM
+
+# --- рамки по ресурсам ---
+# Модель живёт в процессе ollama; самой Амелии столько за глаза
+MemoryMax=1G
+MemoryHigh=768M
+CPUWeight=50
+TasksMax=256
+
+# --- изоляция ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/amelia/data /opt/amelia/vault /opt/amelia/amelia/skills
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

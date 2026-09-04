@@ -1,0 +1,21 @@
+[project]
+name = "amelia"
+version = "0.1.0"
+description = "Автономное Модульное Единое Логико-Интеллектуальное Ядро"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+telegram = ["aiogram>=3.7", "telethon>=1.36"]
+vector = ["sqlite-vec>=0.1.1", "numpy>=1.26"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[project.scripts]
+amelia = "amelia.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
