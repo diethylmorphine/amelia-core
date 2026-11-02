@@ -13,6 +13,7 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,6 +68,7 @@ class MemoryStore:
         self.llm = llm
         self._db: sqlite3.Connection | None = None
         self._lock = asyncio.Lock()
+        self._db_lock = threading.RLock()
 
     # ------------------------------------------------------------------ #
     async def init(self) -> None:
@@ -108,42 +110,44 @@ class MemoryStore:
         duplicate = await asyncio.to_thread(self._find_duplicate, text, user_id, embedding)
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         async with self._lock:
-            if duplicate is not None:
-                self.db.execute(
-                    "UPDATE memories SET created_at = ?, source = ? WHERE id = ?",
-                    (now, source, duplicate),
+            with self._db_lock:
+                if duplicate is not None:
+                    self.db.execute(
+                        "UPDATE memories SET created_at = ?, source = ? WHERE id = ?",
+                        (now, source, duplicate),
+                    )
+                    self.db.commit()
+                    log.debug("Дубль записи #%d — обновил дату вместо вставки", duplicate)
+                    return duplicate
+
+                cursor = self.db.execute(
+                    "INSERT INTO memories (text, source, user_id, tags, embedding, created_at, scope)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (text, source, user_id, json.dumps(tags or [], ensure_ascii=False),
+                     pack(embedding) if embedding else None, now, scope),
                 )
                 self.db.commit()
-                log.debug("Дубль записи #%d — обновил дату вместо вставки", duplicate)
-                return duplicate
-
-            cursor = self.db.execute(
-                "INSERT INTO memories (text, source, user_id, tags, embedding, created_at, scope)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (text, source, user_id, json.dumps(tags or [], ensure_ascii=False),
-                 pack(embedding) if embedding else None, now, scope),
-            )
-            self.db.commit()
-            return int(cursor.lastrowid)
+                return int(cursor.lastrowid)
 
     def _find_duplicate(self, text: str, user_id: str, embedding: list[float]) -> int | None:
-        row = self.db.execute(
-            "SELECT id FROM memories WHERE user_id = ? AND lower(trim(text)) = ? LIMIT 1",
-            (user_id, _normalize(text)),
-        ).fetchone()
-        if row:
-            return int(row["id"])
-        if not embedding:
+        with self._db_lock:
+            row = self.db.execute(
+                "SELECT id FROM memories WHERE user_id = ? AND lower(trim(text)) = ? LIMIT 1",
+                (user_id, _normalize(text)),
+            ).fetchone()
+            if row:
+                return int(row["id"])
+            if not embedding:
+                return None
+            length = len(text.strip())
+            for candidate in self._candidates(text, user_id, include_shared=False, limit=20):
+                other = len(candidate["text"].strip())
+                shorter, longer = sorted((length, other))
+                if not longer or shorter / longer < DEDUP_LENGTH_RATIO:
+                    continue
+                if cosine(embedding, unpack(candidate["embedding"])) >= DEDUP_THRESHOLD:
+                    return int(candidate["id"])
             return None
-        length = len(text.strip())
-        for candidate in self._candidates(text, user_id, include_shared=False, limit=20):
-            other = len(candidate["text"].strip())
-            shorter, longer = sorted((length, other))
-            if not longer or shorter / longer < DEDUP_LENGTH_RATIO:
-                continue
-            if cosine(embedding, unpack(candidate["embedding"])) >= DEDUP_THRESHOLD:
-                return int(candidate["id"])
-        return None
 
     async def forget(self, memory_id: int, user_id: str | None = None) -> bool:
         sql = "DELETE FROM memories WHERE id = ?"
@@ -152,9 +156,10 @@ class MemoryStore:
             sql += " AND user_id = ?"
             params.append(user_id)
         async with self._lock:
-            cursor = self.db.execute(sql, params)
-            self.db.commit()
-            return cursor.rowcount > 0
+            with self._db_lock:
+                cursor = self.db.execute(sql, params)
+                self.db.commit()
+                return cursor.rowcount > 0
 
     # ------------------------------------------------------------------ #
     async def recall(
@@ -171,6 +176,10 @@ class MemoryStore:
         )
 
     def _recall_sync(self, query, query_vector, limit, user_id, include_shared) -> list[Memory]:
+        with self._db_lock:
+            return self._recall_locked(query, query_vector, limit, user_id, include_shared)
+
+    def _recall_locked(self, query, query_vector, limit, user_id, include_shared) -> list[Memory]:
         rows = self._candidates(query, user_id, include_shared, CANDIDATES)
         if not rows:
             return []
@@ -229,38 +238,45 @@ class MemoryStore:
 
     # ------------------------------------------------------------------ #
     async def count(self, user_id: str | None = None) -> int:
-        if user_id and user_id != ALL_USERS:
-            return int(self.db.execute(
-                "SELECT COUNT(*) FROM memories WHERE user_id = ?", (user_id,)
-            ).fetchone()[0])
-        return int(self.db.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
+        with self._db_lock:
+            if user_id and user_id != ALL_USERS:
+                return int(self.db.execute(
+                    "SELECT COUNT(*) FROM memories WHERE user_id = ?", (user_id,)
+                ).fetchone()[0])
+            return int(self.db.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
 
     async def backup(self, target: Path) -> Path:
         """Онлайн-копия через нативный SQLite backup: не блокирует запись."""
         target = Path(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         def _run() -> None:
-            with sqlite3.connect(target) as copy:
-                self.db.backup(copy)
+            with self._db_lock:
+                copy = sqlite3.connect(target)
+                try:
+                    self.db.backup(copy)
+                finally:
+                    copy.close()
         await asyncio.to_thread(_run)
         return target
 
     async def maintain(self, vacuum: bool = False) -> str:
         """Подрезать WAL и при необходимости сжать базу."""
         def _run() -> str:
-            self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            if vacuum:
-                self.db.execute("VACUUM")
-            self.db.execute("PRAGMA optimize")
-            self.db.commit()
-            return f"{self.db_path.stat().st_size / 1024 / 1024:.1f} МБ"
+            with self._db_lock:
+                self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                if vacuum:
+                    self.db.execute("VACUUM")
+                self.db.execute("PRAGMA optimize")
+                self.db.commit()
+                return f"{self.db_path.stat().st_size / 1024 / 1024:.1f} МБ"
         return await asyncio.to_thread(_run)
 
     async def close(self) -> None:
         if self._db is not None:
-            try:
-                self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            except sqlite3.Error:
-                pass
-            self._db.close()
-            self._db = None
+            with self._db_lock:
+                try:
+                    self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                except sqlite3.Error:
+                    pass
+                self._db.close()
+                self._db = None

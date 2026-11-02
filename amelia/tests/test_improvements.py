@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
+import sys
 import json
 import time
 
@@ -213,10 +215,15 @@ async def test_builtin_modules_still_get_full_kernel(kernel):
 
 async def test_offsite_backup_runs_the_configured_command(tmp_path):
     marker = tmp_path / "uploaded.txt"
-    config = Config(db_path=tmp_path / "t.db", vault_path=tmp_path / "v", health_port=0,
-                    scheduler_enabled=False,
-                    backup_command=f"/bin/sh -c echo_placeholder")
-    config.backup_command = f"/usr/bin/env cp {{path}} {marker}"
+    copy_script = "import shutil,sys; shutil.copyfile(sys.argv[1],sys.argv[2])"
+    config = Config(
+        db_path=tmp_path / "t.db", vault_path=tmp_path / "v", health_port=0,
+        scheduler_enabled=False,
+        backup_command=(
+            f"{shlex.quote(sys.executable)} -c {shlex.quote(copy_script)} "
+            f"{{path}} {shlex.quote(str(marker))}"
+        ),
+    )
     kernel = Kernel(config)
     llm = ScriptedLLM()
     kernel.llm = kernel.memory.llm = kernel.router.llm = kernel.sessions.llm = llm
