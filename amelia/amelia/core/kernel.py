@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 
 from ..config import Config
+from . import lang
 from .agent import Agent
 from .bus import EventBus
 from .context import Request, Response
 from .forge import Forge
 from .forge.sandbox import SkillKernel
 from .health import Health
-from . import lang
 from .llm.ollama import OllamaProvider
 from .memory.store import MemoryStore
 from .registry import ModuleRegistry

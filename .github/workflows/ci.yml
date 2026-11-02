@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e "./amelia[dev]"
+      - run: ruff check amelia/amelia
+      - run: pytest -c amelia/pyproject.toml amelia/tests

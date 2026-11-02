@@ -10,6 +10,7 @@ from __future__ import annotations
 import math
 from array import array
 from datetime import datetime, timezone
+from datetime import timedelta as _td
 
 # Насколько свежесть двигает выдачу. 0 — не двигает вовсе.
 RECENCY_WEIGHT = 0.3
@@ -58,6 +59,4 @@ def rank(similarity: float, created_at: str, now: datetime | None = None) -> flo
     """
     return similarity * (1.0 + RECENCY_WEIGHT * recency(created_at, now))
 
-
-from datetime import timedelta as _td
 _ZERO = _td(0)

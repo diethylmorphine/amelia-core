@@ -7,9 +7,9 @@ import os
 from dataclasses import dataclass
 from datetime import timezone, tzinfo
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 log = logging.getLogger(__name__)
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ROOT = Path(__file__).resolve().parent.parent
 

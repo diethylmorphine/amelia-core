@@ -65,8 +65,8 @@ class SafeConfig:
 
     @property
     def tz(self):
-        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
         from datetime import timezone
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
         try:
             return ZoneInfo(self.timezone_name)
         except (ZoneInfoNotFoundError, ValueError):
