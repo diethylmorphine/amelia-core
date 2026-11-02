@@ -1,0 +1,6 @@
+amelia/data/
+.venv/
+__pycache__/
+*.py[cod]
+amelia/amelia/skills/_trash/*
+*.egg-info/
