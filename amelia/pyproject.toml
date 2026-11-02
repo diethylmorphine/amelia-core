@@ -3,7 +3,7 @@ name = "amelia"
 version = "0.1.0"
 description = "Автономное Модульное Единое Логико-Интеллектуальное Ядро"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["tzdata>=2024.1"]
 
 [project.optional-dependencies]
 telegram = ["aiogram>=3.7", "telethon>=1.36"]
@@ -16,6 +16,10 @@ amelia = "amelia.__main__:main"
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["amelia*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
