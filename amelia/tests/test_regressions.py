@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -301,6 +302,41 @@ async def test_concurrent_identical_notes_are_deduplicated(kernel):
 
     assert len(set(ids)) == 1
     assert await kernel.memory.count(user_id="dave") == 1
+
+
+async def test_exact_note_dedup_normalizes_internal_whitespace(kernel):
+    first = await kernel.memory.remember("same   note", user_id="dave")
+    second = await kernel.memory.remember("same note", user_id="dave")
+
+    assert first == second
+    assert await kernel.memory.count(user_id="dave") == 1
+
+
+async def test_memory_migration_backfills_normalized_text(tmp_path):
+    db_path = tmp_path / "legacy.db"
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "CREATE TABLE memories ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, "
+            "source TEXT NOT NULL DEFAULT 'unknown', user_id TEXT NOT NULL DEFAULT 'local', "
+            "tags TEXT NOT NULL DEFAULT '', embedding BLOB, created_at TEXT NOT NULL)"
+        )
+        db.execute(
+            "INSERT INTO memories (text, user_id, created_at) VALUES (?, ?, ?)",
+            ("legacy   note", "dave", NOW.isoformat()),
+        )
+
+    kernel = Kernel(Config(db_path=db_path, health_port=0, upkeep_enabled=False,
+                           scheduler_enabled=False))
+    kernel.llm = kernel.memory.llm = kernel.router.llm = kernel.sessions.llm = OfflineLLM()
+    await kernel.start()
+    try:
+        first = await kernel.memory.remember("legacy   note", user_id="dave")
+        second = await kernel.memory.remember("legacy note", user_id="dave")
+        assert first == second == 1
+        assert await kernel.memory.count(user_id="dave") == 1
+    finally:
+        await kernel.stop()
 
 
 # --- устойчивость к странному вводу --------------------------------------

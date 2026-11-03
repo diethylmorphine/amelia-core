@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS memories (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     text       TEXT    NOT NULL,
+    normalized_text TEXT NOT NULL DEFAULT '',
     source     TEXT    NOT NULL DEFAULT 'unknown',
     user_id    TEXT    NOT NULL DEFAULT 'local',
     tags       TEXT    NOT NULL DEFAULT '',

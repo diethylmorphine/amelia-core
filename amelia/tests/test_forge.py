@@ -142,6 +142,22 @@ async def test_generated_skill_is_not_executed_before_explicit_approval(kernel, 
     assert json.loads((SKILLS_DIR / "echotest.json").read_text(encoding="utf-8"))["status"] == "pending"
 
 
+@pytest.mark.parametrize("field, value", [
+    ("code", 123),
+    ("intents", ["echo", 1]),
+    ("triggers", ["echo", 1]),
+])
+async def test_malformed_skill_fields_are_rejected_without_crashing(kernel, field, value):
+    draft = dict(GOOD_DRAFT, **{field: value})
+    kernel.scripted.script = [draft] * kernel.config.forge_attempts
+
+    result = await kernel.forge.create("сгенерируй навык")
+
+    assert not result.ok
+    assert result.attempts == kernel.config.forge_attempts
+    assert not (SKILLS_DIR / "echotest.py").exists()
+
+
 # --- полный цикл -----------------------------------------------------------
 
 async def test_skill_needs_approval_before_it_works(kernel):

@@ -92,6 +92,20 @@ class MemoryStore:
         if "scope" not in existing:
             self.db.execute(f"ALTER TABLE memories ADD COLUMN scope TEXT NOT NULL DEFAULT '{PRIVATE}'")
             log.info("Миграция: добавлена колонка scope")
+        if "normalized_text" not in existing:
+            self.db.execute(
+                "ALTER TABLE memories ADD COLUMN normalized_text TEXT NOT NULL DEFAULT ''"
+            )
+            rows = self.db.execute("SELECT id, text FROM memories").fetchall()
+            self.db.executemany(
+                "UPDATE memories SET normalized_text = ? WHERE id = ?",
+                [(_normalize(row["text"]), row["id"]) for row in rows],
+            )
+            log.info("Миграция: добавлена колонка normalized_text")
+        self.db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_memories_user_normalized "
+            "ON memories(user_id, normalized_text)"
+        )
 
     @property
     def db(self) -> sqlite3.Connection:
@@ -121,9 +135,10 @@ class MemoryStore:
                     return duplicate
 
                 cursor = self.db.execute(
-                    "INSERT INTO memories (text, source, user_id, tags, embedding, created_at, scope)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (text, source, user_id, json.dumps(tags or [], ensure_ascii=False),
+                    "INSERT INTO memories "
+                    "(text, normalized_text, source, user_id, tags, embedding, created_at, scope)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (text, _normalize(text), source, user_id, json.dumps(tags or [], ensure_ascii=False),
                      pack(embedding) if embedding else None, now, scope),
                 )
                 self.db.commit()
@@ -132,7 +147,7 @@ class MemoryStore:
     def _find_duplicate(self, text: str, user_id: str, embedding: list[float]) -> int | None:
         with self._db_lock:
             row = self.db.execute(
-                "SELECT id FROM memories WHERE user_id = ? AND lower(trim(text)) = ? LIMIT 1",
+                "SELECT id FROM memories WHERE user_id = ? AND normalized_text = ? LIMIT 1",
                 (user_id, _normalize(text)),
             ).fetchone()
             if row:

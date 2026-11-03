@@ -219,23 +219,36 @@ class Forge:
         except json.JSONDecodeError as exc:
             return {}, [f"JSON не разобрался: {exc}"]
 
+        if not isinstance(data, dict):
+            return {}, ["JSON должен быть объектом"]
+
         problems: list[str] = []
-        for key in ("name", "description", "intents", "code"):
-            if not data.get(key):
+        for key in ("name", "description", "code"):
+            value = data.get(key)
+            if not isinstance(value, str):
+                problems.append(f"Поле {key} должно быть строкой")
+            elif not value.strip():
                 problems.append(f"В JSON нет ключа {key}")
+        intents = data.get("intents")
+        if not isinstance(intents, list) or not intents or any(
+            not isinstance(intent, str) or not intent.strip() for intent in intents
+        ):
+            problems.append("intents должен быть непустым массивом строк")
+        triggers = data.get("triggers", [])
+        if not isinstance(triggers, list) or any(
+            not isinstance(trigger, str) for trigger in triggers
+        ):
+            problems.append("triggers должен быть массивом строк")
         if problems:
             return {}, problems
 
-        name = str(data["name"]).strip().lower()
+        name = data["name"].strip().lower()
         if not NAME_PATTERN.match(name):
             problems.append(f"Недопустимое имя навыка: {name!r}")
         if (self.skills_dir / f"{name}.py").exists():
             problems.append(f"Навык «{name}» уже существует")
         if self.kernel.modules.by_name(name):
             problems.append(f"Имя «{name}» занято встроенным модулем")
-        if not isinstance(data["intents"], list) or not data["intents"]:
-            problems.append("intents должен быть непустым массивом строк")
-
         data["name"] = name
         return (data, problems) if not problems else ({}, problems)
 
