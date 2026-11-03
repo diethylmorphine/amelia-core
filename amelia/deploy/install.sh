@@ -27,8 +27,8 @@ mkdir -p "$APP_DIR"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ "$SRC" != "$APP_DIR" ]]; then
   cp -r "$SRC/amelia" "$SRC/pyproject.toml" "$SRC/README.md" "$APP_DIR/"
-  [[ -f "$APP_DIR/.env" ]] || cp "$SRC/.env.example" "$APP_DIR/.env"
 fi
+[[ -f "$APP_DIR/.env" ]] || cp "$SRC/.env.example" "$APP_DIR/.env"
 mkdir -p "$APP_DIR"/{data,vault,data/backups}
 
 say "Виртуальное окружение"

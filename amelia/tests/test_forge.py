@@ -9,8 +9,8 @@ import pytest
 
 from amelia.config import Config
 from amelia.core.context import Request
-from amelia.core.kernel import Kernel
 from amelia.core.forge.validator import validate_skill_code
+from amelia.core.kernel import Kernel
 
 SKILLS_DIR = Path(__file__).resolve().parent.parent / "amelia" / "skills"
 
@@ -58,15 +58,30 @@ class ScriptedLLM:
 
 @pytest.fixture
 async def kernel(tmp_path):
+    trash = SKILLS_DIR / "_trash"
+    cache = SKILLS_DIR / "__pycache__"
+    skills_before = set(SKILLS_DIR.glob("echotest.*"))
+    trash_before = set(trash.glob("echotest.*")) if trash.exists() else set()
+    cache_before = set(cache.glob("echotest.*.pyc")) if cache.exists() else set()
     kernel = Kernel(Config(db_path=tmp_path / "t.db", vault_path=tmp_path / "vault"))
     llm = ScriptedLLM()
     kernel.llm = kernel.memory.llm = kernel.router.llm = llm
     kernel.scripted = llm
     await kernel.start()
-    yield kernel
-    await kernel.stop()
-    for leftover in SKILLS_DIR.glob("echotest.*"):
-        leftover.unlink()
+    try:
+        yield kernel
+    finally:
+        try:
+            await kernel.stop()
+        finally:
+            for leftover in set(SKILLS_DIR.glob("echotest.*")) - skills_before:
+                leftover.unlink()
+            if trash.exists():
+                for leftover in set(trash.glob("echotest.*")) - trash_before:
+                    leftover.unlink()
+            if cache.exists():
+                for leftover in set(cache.glob("echotest.*.pyc")) - cache_before:
+                    leftover.unlink()
 
 
 # --- валидатор -------------------------------------------------------------
@@ -106,6 +121,25 @@ def test_validator_blocks_eval_and_dunder_escape():
 def test_validator_blocks_import_time_side_effects():
     code = GOOD_CODE + "\n\nprint('я выполнился при импорте')\n"
     assert any("верхнем уровне" in problem for problem in validate_skill_code(code).problems)
+
+
+async def test_generated_skill_is_not_executed_before_explicit_approval(kernel, tmp_path):
+    marker = tmp_path / "probe-ran"
+    code = (
+        "from pathlib import Path\n"
+        f"MARKER = Path({str(marker)!r}).write_text('executed')\n"
+        + GOOD_CODE
+    )
+    draft = dict(GOOD_DRAFT, code=code)
+    assert validate_skill_code(code).ok
+    kernel.config.forge_auto_approve = True
+    kernel.scripted.script = [draft]
+
+    result = await kernel.forge.create("проверь безопасность до одобрения")
+
+    assert result.status == "pending"
+    assert not marker.exists()
+    assert json.loads((SKILLS_DIR / "echotest.json").read_text(encoding="utf-8"))["status"] == "pending"
 
 
 # --- полный цикл -----------------------------------------------------------

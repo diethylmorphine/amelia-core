@@ -23,11 +23,11 @@ python -m pip install -e ".[dev]"
 python -m amelia cli
 ```
 
-The CLI can run without a model service; free-form LLM responses require Ollama. The Telegram client is optional and requires the `telegram` extra and a `BOT_TOKEN`. See the detailed guide for service setup and configuration.
+The CLI can run without a model service; free-form LLM responses require Ollama. The Telegram client is optional and requires the `telegram` extra, `AMELIA_BOT_TOKEN`, and `AMELIA_OWNER_ID`; it will not start without an owner ID. See the detailed guide for service setup and configuration.
 
 ## Generated-skill security warning
 
-The forge's AST validator is a static filter, not a security boundary. It rejects selected imports and constructs, and a first-import probe runs in a subprocess with a 20-second timeout. That subprocess uses the same OS account and is not isolated by a container, sandbox, filesystem restrictions, or resource limits. Once enabled, a generated skill executes in the Amelia process with its restricted `SkillKernel` facade. The facade is also bypassable through ordinary Python private attributes such as `memory._memory`; Python code must not be treated as contained or safe. Review generated code before enabling it and keep `AMELIA_FORGE_AUTO_APPROVE=false` unless you have deliberately assessed the risk.
+The forge's AST validator is a static filter, not a security boundary. Generated code is not executed until you explicitly approve it; approval runs a first-import probe in a subprocess with a 20-second timeout. That subprocess uses the same OS account and is not isolated by a container, sandbox, filesystem restrictions, or resource limits. Once enabled, a generated skill executes in the Amelia process with its restricted `SkillKernel` facade. The facade is also bypassable through ordinary Python private attributes such as `memory._memory`; Python code must not be treated as contained or safe. Review generated code before enabling it. `AMELIA_FORGE_AUTO_APPROVE` is retained for configuration compatibility but no longer bypasses explicit approval.
 
 ## Checks
 

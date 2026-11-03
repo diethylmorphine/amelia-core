@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from amelia.clients.telegram import TelegramClient
 from amelia.config import Config
 from amelia.core.context import Request, Response
 from amelia.core.kernel import Kernel
@@ -61,6 +62,35 @@ def test_out_of_range_values_are_clamped(monkeypatch):
     config = Config.load(env_file=Path("/nonexistent"))
     assert config.upkeep_hour == 23
     assert config.agent_max_steps == 20
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf"])
+def test_non_finite_float_env_uses_defaults(monkeypatch, value):
+    monkeypatch.setenv("AMELIA_SCHEDULER_TICK", value)
+    monkeypatch.setenv("AMELIA_LLM_PROBE_TTL", value)
+    monkeypatch.setenv("AMELIA_TEMPERATURE", value)
+
+    config = Config.load(env_file=Path("/nonexistent"))
+
+    assert config.scheduler_tick == 5.0
+    assert config.llm_probe_ttl == 30.0
+    assert config.llm_temperature == 0.3
+
+
+async def test_telegram_requires_owner_id_before_starting():
+    client = TelegramClient(Kernel(Config(bot_token="test-token")))
+
+    with pytest.raises(SystemExit, match="AMELIA_OWNER_ID"):
+        await client.run()
+
+
+def test_installer_environment_template_exists():
+    template = Path(__file__).resolve().parents[1] / ".env.example"
+
+    assert template.is_file()
+    contents = template.read_text(encoding="utf-8")
+    assert "AMELIA_BOT_TOKEN=" in contents
+    assert "AMELIA_OWNER_ID=" in contents
 
 
 # --- 2. сломанный модуль не превращает ассистента в кирпич ---------------
@@ -167,6 +197,7 @@ async def test_tracer_survives_response_without_request(kernel):
 def test_recall_requires_user_id_explicitly():
     """Утечка случилась именно потому, что аргумент был необязательным."""
     import inspect
+
     from amelia.core.memory.store import MemoryStore
 
     parameter = inspect.signature(MemoryStore.recall).parameters["user_id"]
@@ -260,6 +291,16 @@ async def test_exact_duplicates_still_merge(tmp_path):
         assert one == two
     finally:
         await kernel.stop()
+
+
+async def test_concurrent_identical_notes_are_deduplicated(kernel):
+    ids = await asyncio.gather(*[
+        kernel.memory.remember("same concurrent note", user_id="dave")
+        for _ in range(30)
+    ])
+
+    assert len(set(ids)) == 1
+    assert await kernel.memory.count(user_id="dave") == 1
 
 
 # --- устойчивость к странному вводу --------------------------------------

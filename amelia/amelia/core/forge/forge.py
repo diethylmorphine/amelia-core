@@ -3,11 +3,11 @@
 Конвейер строго последовательный, и на каждом шаге можно остановиться:
 
   запрос → модель пишет JSON → AST-валидатор → файл на диск (status=pending)
-         → импорт в отдельном процессе под таймаутом → одобрение человеком
+         → одобрение человеком → импорт в отдельном процессе под таймаутом
          → горячая перезагрузка реестра → навык живой
 
-Ничего не активируется само, пока auto_approve выключен. Удаление —
-не удаление, а перенос в skills/_trash, чтобы можно было откатиться.
+Сгенерированный код не исполняется до явного одобрения навыка пользователем.
+Удаление — не удаление, а перенос в skills/_trash, чтобы можно было откатиться.
 """
 
 from __future__ import annotations
@@ -111,20 +111,8 @@ class Forge:
         }
         self._write_manifest(name, manifest)
 
-        probe_ok, probe_output = await self._probe(name)
-        if not probe_ok:
-            manifest["status"] = "broken"
-            manifest["error"] = probe_output
-            self._write_manifest(name, manifest)
-            return ForgeResult(
-                False,
-                f"Навык «{name}» написан, но не пережил проверочный импорт:\n  {probe_output}\n"
-                f"Файл оставлен для разбора: {path}",
-                name=name, status="broken", path=path,
-            )
-
         if self.kernel.config.forge_auto_approve:
-            return await self.approve(name)
+            log.warning("AMELIA_FORGE_AUTO_APPROVE is ignored; generated skills require explicit approval")
 
         preview = "\n".join(draft["code"].splitlines()[:20])
         return ForgeResult(
@@ -142,11 +130,26 @@ class Forge:
     # Жизненный цикл
     # ------------------------------------------------------------------ #
     async def approve(self, name: str) -> ForgeResult:
+        if not NAME_PATTERN.fullmatch(name):
+            return ForgeResult(False, f"Недопустимое имя навыка: {name!r}")
         manifest = self._read_manifest(name)
         if manifest is None:
             return ForgeResult(False, f"Навыка «{name}» нет")
         if manifest.get("status") == "broken":
             return ForgeResult(False, f"Навык «{name}» помечен как сломанный — включать нечего")
+
+        probe_ok, probe_output = await self._probe(name)
+        if not probe_ok:
+            manifest["status"] = "broken"
+            manifest["error"] = probe_output
+            self._write_manifest(name, manifest)
+            await self._audit("probe_failed", {"name": name, "error": probe_output})
+            return ForgeResult(
+                False,
+                f"Навык «{name}» не пережил проверочный импорт:\n  {probe_output}\n"
+                f"Файл оставлен для разбора.",
+                name=name, status="broken",
+            )
 
         manifest["status"] = "enabled"
         manifest["approved_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")

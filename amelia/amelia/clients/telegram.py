@@ -21,17 +21,20 @@ class TelegramClient(Client):
     name = "telegram"
 
     async def run(self) -> None:
+        token = self.kernel.config.bot_token
+        if not token:
+            raise SystemExit("Не задан AMELIA_BOT_TOKEN в .env")
+
+        owner = str(self.kernel.config.owner_id or "")
+        if not owner:
+            raise SystemExit("Не задан AMELIA_OWNER_ID — Telegram-клиент закрыт для всех")
+
         try:
             from aiogram import Bot, Dispatcher
             from aiogram.types import Message
         except ImportError as exc:
             raise SystemExit('Нужен aiogram: pip install -e ".[telegram]"') from exc
 
-        token = self.kernel.config.bot_token
-        if not token:
-            raise SystemExit("Не задан AMELIA_BOT_TOKEN в .env")
-
-        owner = str(self.kernel.config.owner_id or "")
         bot = Bot(token)
         dispatcher = Dispatcher()
 

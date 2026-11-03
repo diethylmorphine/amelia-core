@@ -107,9 +107,9 @@ class MemoryStore:
         """Сохранить запись. Повтор того же самого обновляет существующую."""
         embedding = await self.llm.embed(text) if await self.llm.available() else []
 
-        duplicate = await asyncio.to_thread(self._find_duplicate, text, user_id, embedding)
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         async with self._lock:
+            duplicate = await asyncio.to_thread(self._find_duplicate, text, user_id, embedding)
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             with self._db_lock:
                 if duplicate is not None:
                     self.db.execute(

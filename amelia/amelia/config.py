@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
 from dataclasses import dataclass
 from datetime import timezone, tzinfo
@@ -54,6 +55,9 @@ def _float(value: str, fallback: float, *, low: float | None = None) -> float:
     except (TypeError, ValueError):
         log.warning("Некорректное число %r — беру %s", value, fallback)
         return fallback
+    if not math.isfinite(parsed):
+        log.warning("Некорректное число %r — беру %s", value, fallback)
+        return fallback
     return max(parsed, low) if low is not None else parsed
 
 
@@ -80,7 +84,7 @@ class Config:
     log_level: str = "INFO"
     # --- Кузница: самописные навыки ---
     forge_enabled: bool = True
-    forge_auto_approve: bool = False      # включать навык без спроса — не рекомендуется
+    forge_auto_approve: bool = False      # retained for compatibility; explicit approval is required
     forge_attempts: int = 3               # попыток переписать код после ошибок валидатора
     forge_extra_imports: tuple[str, ...] = ()   # чем расширить белый список импортов
     # --- Сессии: диалоговый контекст ---
